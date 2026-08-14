@@ -50,6 +50,5 @@ album-recommender/
 │   └── 01_inspect_data.ipynb
 │
 └── data/
-    ├── raw/
-    └── processed/
+    └── README.md
 ```
