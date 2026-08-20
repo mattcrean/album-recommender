@@ -36,7 +36,7 @@ This is currently a provisional album identifier.
 - [x] Inspect raw ListenBrainz data
 - [x] Assess collaborative-filtering viability
 - [x] Build modelling dataset
-- [ ] Build SQL analytics database
+- [x] Build SQL analytics database
 
 ## Repository structure
 
@@ -50,6 +50,7 @@ album-recommender/
 ├── notebooks/
 │   └── 01_inspect_data.ipynb
 │   └── 02_build_dataset.ipynb
+│   └── 03_build_sql_database.ipynb
 │
 └── data/
     └── README.md
