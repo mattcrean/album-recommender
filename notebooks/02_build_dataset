@@ -1,0 +1,1549 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "e6149eb7",
+   "metadata": {},
+   "source": [
+    "# Build Modelling Dataset\n",
+    "\n",
+    "This notebook turns the validated ListenBrainz data into a clean interaction dataset that is ready for recommendation modelling and SQL querying."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "978335ff",
+   "metadata": {},
+   "source": [
+    "## 1. Load and aggregate the full dataset"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "de43a911",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import json\n",
+    "from collections import Counter\n",
+    "from pathlib import Path\n",
+    "\n",
+    "import pandas as pd\n",
+    "\n",
+    "pd.set_option(\"display.max_columns\", None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "9f3fd888",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "listens_path = Path(\"..\") / \"..\" / \"data\" / \"2026\" / \"7.listens\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "6839bbb1",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Processed 500,000 listens\n",
+      "Processed 1,000,000 listens\n",
+      "Processed 1,500,000 listens\n",
+      "Processed 2,000,000 listens\n",
+      "Processed 2,500,000 listens\n",
+      "Processed 3,000,000 listens\n",
+      "Processed 3,500,000 listens\n",
+      "Processed 4,000,000 listens\n",
+      "Processed 4,500,000 listens\n"
+     ]
+    }
+   ],
+   "source": [
+    "user_album_counts = Counter()\n",
+    "\n",
+    "valid_listens = 0\n",
+    "\n",
+    "with listens_path.open(\"r\", encoding=\"utf-8\") as listens_file:\n",
+    "\n",
+    "    for line_number, line in enumerate(listens_file, start=1):\n",
+    "\n",
+    "        record = json.loads(line)\n",
+    "\n",
+    "        user_id = record.get(\"user_id\")\n",
+    "\n",
+    "        track_metadata = record.get(\"track_metadata\", {})\n",
+    "        artist_name = track_metadata.get(\"artist_name\")\n",
+    "        release_name = track_metadata.get(\"release_name\")\n",
+    "\n",
+    "        # Ignore listens where we cannot identify an album\n",
+    "        if user_id is None or not artist_name or not release_name:\n",
+    "            continue\n",
+    "\n",
+    "        # Temporary album identifier\n",
+    "        album_identifier = (\n",
+    "            artist_name.strip().lower(),\n",
+    "            release_name.strip().lower()\n",
+    "        )\n",
+    "\n",
+    "        user_album_counts[(user_id, album_identifier)] += 1\n",
+    "        valid_listens += 1\n",
+    "\n",
+    "        # Optional progress update\n",
+    "        if line_number % 500_000 == 0:\n",
+    "            print(f\"Processed {line_number:,} listens\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "508320c9",
+   "metadata": {},
+   "source": [
+    "### Create the user-album interaction table\n",
+    "\n",
+    "The aggregated counts are converted into a pandas DataFrame, where each row represents one unique user-album interaction.\n",
+    "\n",
+    "For each interaction, the table stores the user, artist, release, a combined album identifier, and the number of listens associated with that user-album pair."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "1cf96f1c",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>user_id</th>\n",
+       "      <th>artist_name</th>\n",
+       "      <th>release_name</th>\n",
+       "      <th>album_key</th>\n",
+       "      <th>listen_count</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>137288</td>\n",
+       "      <td>bts</td>\n",
+       "      <td>swim (underwater remix)</td>\n",
+       "      <td>bts — swim (underwater remix)</td>\n",
+       "      <td>35</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>108691</td>\n",
+       "      <td>kevin macleod</td>\n",
+       "      <td>mystery</td>\n",
+       "      <td>kevin macleod — mystery</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>137098</td>\n",
+       "      <td>bts</td>\n",
+       "      <td>keep swimming</td>\n",
+       "      <td>bts — keep swimming</td>\n",
+       "      <td>138</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1377</td>\n",
+       "      <td>townes van zandt</td>\n",
+       "      <td>rear view mirror</td>\n",
+       "      <td>townes van zandt — rear view mirror</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>48676</td>\n",
+       "      <td>blackpink</td>\n",
+       "      <td>jump</td>\n",
+       "      <td>blackpink — jump</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   user_id       artist_name             release_name  \\\n",
+       "0   137288               bts  swim (underwater remix)   \n",
+       "1   108691     kevin macleod                  mystery   \n",
+       "2   137098               bts            keep swimming   \n",
+       "3     1377  townes van zandt         rear view mirror   \n",
+       "4    48676         blackpink                     jump   \n",
+       "\n",
+       "                             album_key  listen_count  \n",
+       "0        bts — swim (underwater remix)            35  \n",
+       "1              kevin macleod — mystery             2  \n",
+       "2                  bts — keep swimming           138  \n",
+       "3  townes van zandt — rear view mirror             1  \n",
+       "4                     blackpink — jump             1  "
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_album_interactions = pd.DataFrame(\n",
+    "    [\n",
+    "        {\n",
+    "            \"user_id\": user_id,\n",
+    "            \"artist_name\": album_identifier[0],\n",
+    "            \"release_name\": album_identifier[1],\n",
+    "            \"album_key\": (\n",
+    "                f\"{album_identifier[0]} — \"\n",
+    "                f\"{album_identifier[1]}\"\n",
+    "            ),\n",
+    "            \"listen_count\": listen_count,\n",
+    "        }\n",
+    "        for (user_id, album_identifier), listen_count\n",
+    "        in user_album_counts.items()\n",
+    "    ]\n",
+    ")\n",
+    "\n",
+    "user_album_interactions.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "27554317",
+   "metadata": {},
+   "source": [
+    "## 2. Inspect user activity"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e52bf15d",
+   "metadata": {},
+   "source": [
+    "To understand how much listening history is available for each user, we count the number of distinct album interactions per user.\n",
+    "\n",
+    "The distribution is highly skewed: the median user has interacted with 11 albums, while a small number of users have extremely large histories. This motivates a closer look at the most active users before choosing any filtering rules."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "02e1dc78",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "count    19346.000000\n",
+       "mean        37.026569\n",
+       "std        663.951034\n",
+       "min          1.000000\n",
+       "50%         11.000000\n",
+       "90%         55.000000\n",
+       "95%         81.000000\n",
+       "99%        165.550000\n",
+       "max      72727.000000\n",
+       "dtype: float64"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "albums_per_user = (\n",
+    "    user_album_interactions\n",
+    "    .groupby(\"user_id\")\n",
+    "    .size()\n",
+    ")\n",
+    "\n",
+    "albums_per_user.describe(\n",
+    "    percentiles=[0.5, 0.9, 0.95, 0.99]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "805650d8",
+   "metadata": {},
+   "source": [
+    "The most active users are much more extreme than the rest of the dataset. While the median user has interacted with 11 albums, the most active user has more than 72,000 distinct album interactions.\n",
+    "\n",
+    "Several other users also have unusually large histories, so we next examine the upper tail of the distribution before deciding whether these accounts should be filtered from the modelling dataset."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "65eb8daf",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "user_id\n",
+       "21830     72727\n",
+       "148391    35318\n",
+       "148311    21385\n",
+       "91825     20387\n",
+       "148138    17547\n",
+       "148301    11688\n",
+       "148278     9878\n",
+       "147873     9257\n",
+       "148268     8925\n",
+       "21018      7507\n",
+       "148285     7457\n",
+       "147874     7076\n",
+       "147897     7026\n",
+       "9104       5968\n",
+       "147664     5892\n",
+       "147600     5731\n",
+       "148283     3902\n",
+       "148437     3444\n",
+       "148352     3366\n",
+       "148294     3334\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "albums_per_user.sort_values(ascending=False).head(20)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "dd3b97d6",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.900      55.000\n",
+       "0.950      81.000\n",
+       "0.990     165.550\n",
+       "0.995     250.000\n",
+       "0.999    3188.065\n",
+       "dtype: float64"
+      ]
+     },
+     "execution_count": 12,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "albums_per_user.quantile(\n",
+    "    [0.90, 0.95, 0.99, 0.995, 0.999]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5f8e2db4",
+   "metadata": {},
+   "source": [
+    "The upper tail is much more extreme than the typical user. While 99% of users have interacted with fewer than about 166 albums, the 99.9th percentile is already above 3,000 albums.\n",
+    "\n",
+    "This suggests that a very small number of users have unusually large interaction histories, so these accounts should be investigated separately before deciding on an outlier threshold."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "5b64b617",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "user_id\n",
+       "148391    680043\n",
+       "148268    500299\n",
+       "21830     422319\n",
+       "148138    393646\n",
+       "147897    186093\n",
+       "148285    182601\n",
+       "9104      155565\n",
+       "148301    153102\n",
+       "147600    142802\n",
+       "91825     120200\n",
+       "147664    118726\n",
+       "148388     81014\n",
+       "148311     74315\n",
+       "148278     68921\n",
+       "21018      53632\n",
+       "147873     49527\n",
+       "4524       37467\n",
+       "148294     25419\n",
+       "148419     21146\n",
+       "148283     21112\n",
+       "Name: listen_count, dtype: int64"
+      ]
+     },
+     "execution_count": 13,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "listens_per_user = (\n",
+    "    user_album_interactions\n",
+    "    .groupby(\"user_id\")[\"listen_count\"]\n",
+    "    .sum()\n",
+    ")\n",
+    "\n",
+    "listens_per_user.sort_values(ascending=False).head(20)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a4db360e",
+   "metadata": {},
+   "source": [
+    "#### Total listens per user\n",
+    "\n",
+    "I also compare users by their total number of listens, rather than only by the number of distinct albums they have interacted with.\n",
+    "\n",
+    "The most active users again stand out clearly. For example, user `148391` has around 680,000 listens, while several others have more than 100,000. Comparing total listens with distinct album counts helps distinguish users with genuinely broad listening histories from users who may simply replay a smaller set of albums very frequently."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "0098c93a",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>distinct_albums</th>\n",
+       "      <th>total_listens</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>user_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>21830</th>\n",
+       "      <td>72727</td>\n",
+       "      <td>422319</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148391</th>\n",
+       "      <td>35318</td>\n",
+       "      <td>680043</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148311</th>\n",
+       "      <td>21385</td>\n",
+       "      <td>74315</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>91825</th>\n",
+       "      <td>20387</td>\n",
+       "      <td>120200</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148138</th>\n",
+       "      <td>17547</td>\n",
+       "      <td>393646</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148301</th>\n",
+       "      <td>11688</td>\n",
+       "      <td>153102</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148278</th>\n",
+       "      <td>9878</td>\n",
+       "      <td>68921</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147873</th>\n",
+       "      <td>9257</td>\n",
+       "      <td>49527</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148268</th>\n",
+       "      <td>8925</td>\n",
+       "      <td>500299</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>21018</th>\n",
+       "      <td>7507</td>\n",
+       "      <td>53632</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148285</th>\n",
+       "      <td>7457</td>\n",
+       "      <td>182601</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147874</th>\n",
+       "      <td>7076</td>\n",
+       "      <td>20362</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147897</th>\n",
+       "      <td>7026</td>\n",
+       "      <td>186093</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9104</th>\n",
+       "      <td>5968</td>\n",
+       "      <td>155565</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147664</th>\n",
+       "      <td>5892</td>\n",
+       "      <td>118726</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147600</th>\n",
+       "      <td>5731</td>\n",
+       "      <td>142802</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148283</th>\n",
+       "      <td>3902</td>\n",
+       "      <td>21112</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148437</th>\n",
+       "      <td>3444</td>\n",
+       "      <td>12231</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148352</th>\n",
+       "      <td>3366</td>\n",
+       "      <td>8506</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148294</th>\n",
+       "      <td>3334</td>\n",
+       "      <td>25419</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "         distinct_albums  total_listens\n",
+       "user_id                                \n",
+       "21830              72727         422319\n",
+       "148391             35318         680043\n",
+       "148311             21385          74315\n",
+       "91825              20387         120200\n",
+       "148138             17547         393646\n",
+       "148301             11688         153102\n",
+       "148278              9878          68921\n",
+       "147873              9257          49527\n",
+       "148268              8925         500299\n",
+       "21018               7507          53632\n",
+       "148285              7457         182601\n",
+       "147874              7076          20362\n",
+       "147897              7026         186093\n",
+       "9104                5968         155565\n",
+       "147664              5892         118726\n",
+       "147600              5731         142802\n",
+       "148283              3902          21112\n",
+       "148437              3444          12231\n",
+       "148352              3366           8506\n",
+       "148294              3334          25419"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_activity = pd.DataFrame({\n",
+    "    \"distinct_albums\": albums_per_user,\n",
+    "    \"total_listens\": listens_per_user\n",
+    "})\n",
+    "\n",
+    "user_activity.sort_values(\n",
+    "    \"distinct_albums\",\n",
+    "    ascending=False\n",
+    ").head(20)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ac41192c",
+   "metadata": {},
+   "source": [
+    "#### Compare user activity measures\n",
+    "\n",
+    "To better understand the most active accounts, I combine the number of distinct albums with the total number of listens for each user.\n",
+    "\n",
+    "This shows that the extreme users are not all unusual in the same way. Some have very broad listening histories across tens of thousands of albums, while others have extremely high listen counts relative to the number of distinct albums. These users should therefore be investigated before deciding on a filtering rule."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "edf6afe7",
+   "metadata": {},
+   "source": [
+    "## 3. Investigate extreme users\n",
+    "\n",
+    "The previous results show a sharp jump in activity at the very top of the distribution. I therefore examine how many users exceed several high thresholds for distinct albums and total listens.\n",
+    "\n",
+    "This helps determine whether the most extreme accounts represent a very small fraction of the dataset and whether an upper activity filter would be appropriate before modelling."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "1b3abc8b",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Users with > 500 albums: 38 (0.196%)\n",
+      "Users with > 1,000 albums: 30 (0.155%)\n",
+      "Users with > 2,000 albums: 25 (0.129%)\n",
+      "Users with > 5,000 albums: 16 (0.083%)\n",
+      "Users with > 10,000 albums: 6 (0.031%)\n"
+     ]
+    }
+   ],
+   "source": [
+    "thresholds = [500, 1000, 2000, 5000, 10000]\n",
+    "\n",
+    "for threshold in thresholds:\n",
+    "    n_users = (albums_per_user > threshold).sum()\n",
+    "    percentage = n_users / len(albums_per_user) * 100\n",
+    "\n",
+    "    print(\n",
+    "        f\"Users with > {threshold:,} albums: \"\n",
+    "        f\"{n_users:,} ({percentage:.3f}%)\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "22cf3ece",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Users with > 10,000 listens: 25 (0.129%)\n",
+      "Users with > 25,000 listens: 18 (0.093%)\n",
+      "Users with > 50,000 listens: 15 (0.078%)\n",
+      "Users with > 100,000 listens: 11 (0.057%)\n",
+      "Users with > 250,000 listens: 4 (0.021%)\n"
+     ]
+    }
+   ],
+   "source": [
+    "listen_thresholds = [10_000, 25_000, 50_000, 100_000, 250_000]\n",
+    "\n",
+    "for threshold in listen_thresholds:\n",
+    "    n_users = (listens_per_user > threshold).sum()\n",
+    "    percentage = n_users / len(listens_per_user) * 100\n",
+    "\n",
+    "    print(\n",
+    "        f\"Users with > {threshold:,} listens: \"\n",
+    "        f\"{n_users:,} ({percentage:.3f}%)\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "4e2a9661",
+   "metadata": {},
+   "source": [
+    "The very high-activity accounts make up only a tiny fraction of the dataset. Fewer than 0.2% of users have interacted with more than 500 albums, and only 0.03% have interacted with more than 10,000.\n",
+    "\n",
+    "A similarly small group accounts for the highest total listen counts. This suggests that the extreme tail can be treated separately without materially reducing the number of users available for modelling."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "ebb68479",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>distinct_albums</th>\n",
+       "      <th>total_listens</th>\n",
+       "      <th>listens_per_album</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>user_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>21830</th>\n",
+       "      <td>72727</td>\n",
+       "      <td>422319</td>\n",
+       "      <td>5.806908</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148391</th>\n",
+       "      <td>35318</td>\n",
+       "      <td>680043</td>\n",
+       "      <td>19.254856</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148311</th>\n",
+       "      <td>21385</td>\n",
+       "      <td>74315</td>\n",
+       "      <td>3.475099</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>91825</th>\n",
+       "      <td>20387</td>\n",
+       "      <td>120200</td>\n",
+       "      <td>5.895914</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148138</th>\n",
+       "      <td>17547</td>\n",
+       "      <td>393646</td>\n",
+       "      <td>22.433806</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148301</th>\n",
+       "      <td>11688</td>\n",
+       "      <td>153102</td>\n",
+       "      <td>13.099076</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148278</th>\n",
+       "      <td>9878</td>\n",
+       "      <td>68921</td>\n",
+       "      <td>6.977222</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147873</th>\n",
+       "      <td>9257</td>\n",
+       "      <td>49527</td>\n",
+       "      <td>5.350221</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148268</th>\n",
+       "      <td>8925</td>\n",
+       "      <td>500299</td>\n",
+       "      <td>56.055910</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>21018</th>\n",
+       "      <td>7507</td>\n",
+       "      <td>53632</td>\n",
+       "      <td>7.144265</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148285</th>\n",
+       "      <td>7457</td>\n",
+       "      <td>182601</td>\n",
+       "      <td>24.487193</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147874</th>\n",
+       "      <td>7076</td>\n",
+       "      <td>20362</td>\n",
+       "      <td>2.877614</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147897</th>\n",
+       "      <td>7026</td>\n",
+       "      <td>186093</td>\n",
+       "      <td>26.486336</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9104</th>\n",
+       "      <td>5968</td>\n",
+       "      <td>155565</td>\n",
+       "      <td>26.066521</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147664</th>\n",
+       "      <td>5892</td>\n",
+       "      <td>118726</td>\n",
+       "      <td>20.150373</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>147600</th>\n",
+       "      <td>5731</td>\n",
+       "      <td>142802</td>\n",
+       "      <td>24.917466</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148283</th>\n",
+       "      <td>3902</td>\n",
+       "      <td>21112</td>\n",
+       "      <td>5.410559</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148437</th>\n",
+       "      <td>3444</td>\n",
+       "      <td>12231</td>\n",
+       "      <td>3.551394</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148352</th>\n",
+       "      <td>3366</td>\n",
+       "      <td>8506</td>\n",
+       "      <td>2.527035</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>148294</th>\n",
+       "      <td>3334</td>\n",
+       "      <td>25419</td>\n",
+       "      <td>7.624175</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "         distinct_albums  total_listens  listens_per_album\n",
+       "user_id                                                   \n",
+       "21830              72727         422319           5.806908\n",
+       "148391             35318         680043          19.254856\n",
+       "148311             21385          74315           3.475099\n",
+       "91825              20387         120200           5.895914\n",
+       "148138             17547         393646          22.433806\n",
+       "148301             11688         153102          13.099076\n",
+       "148278              9878          68921           6.977222\n",
+       "147873              9257          49527           5.350221\n",
+       "148268              8925         500299          56.055910\n",
+       "21018               7507          53632           7.144265\n",
+       "148285              7457         182601          24.487193\n",
+       "147874              7076          20362           2.877614\n",
+       "147897              7026         186093          26.486336\n",
+       "9104                5968         155565          26.066521\n",
+       "147664              5892         118726          20.150373\n",
+       "147600              5731         142802          24.917466\n",
+       "148283              3902          21112           5.410559\n",
+       "148437              3444          12231           3.551394\n",
+       "148352              3366           8506           2.527035\n",
+       "148294              3334          25419           7.624175"
+      ]
+     },
+     "execution_count": 17,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_activity[\"listens_per_album\"] = (\n",
+    "    user_activity[\"total_listens\"]\n",
+    "    / user_activity[\"distinct_albums\"]\n",
+    ")\n",
+    "\n",
+    "user_activity.sort_values(\n",
+    "    \"distinct_albums\",\n",
+    "    ascending=False\n",
+    ").head(20)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "85b45e9b",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "count    19346.000000\n",
+       "mean         3.953057\n",
+       "std         15.781728\n",
+       "min          1.000000\n",
+       "50%          1.521739\n",
+       "90%          8.000000\n",
+       "95%         12.000000\n",
+       "99%         32.574444\n",
+       "99.9%      132.218333\n",
+       "max       1059.000000\n",
+       "Name: listens_per_album, dtype: float64"
+      ]
+     },
+     "execution_count": 18,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_activity[\"listens_per_album\"].describe(\n",
+    "    percentiles=[0.5, 0.9, 0.95, 0.99, 0.999]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5aadddb9",
+   "metadata": {},
+   "source": [
+    "### Listening intensity among highly active users\n",
+    "\n",
+    "The most active users vary considerably in how frequently they listen to each album. Some users have very broad histories with relatively few listens per album, while others combine broad listening histories with high repeat listening.\n",
+    "\n",
+    "The extreme users therefore do not appear to follow one obviously invalid pattern. Rather than removing them solely because they are highly active, I will treat them cautiously and assess the effect of any upper-user filtering on the modelling dataset."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c047925d",
+   "metadata": {},
+   "source": [
+    "## 4. Inspect album sparsity\n",
+    "\n",
+    "After examining unusually active users, the next step is to look at the dataset from the album side.\n",
+    "\n",
+    "Collaborative filtering depends on overlap between users, so I examine how many distinct users have interacted with each album. If most albums are associated with only one user, they provide little information for learning similarities between listeners.\n",
+    "\n",
+    "This section therefore measures the number of users per album and identifies how much of the catalogue has enough shared interaction to be useful for modelling."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "728e5714",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "count    453104.000000\n",
+       "mean          1.580909\n",
+       "std           4.191553\n",
+       "min           1.000000\n",
+       "50%           1.000000\n",
+       "90%           2.000000\n",
+       "95%           3.000000\n",
+       "99%          11.000000\n",
+       "max         750.000000\n",
+       "Name: user_id, dtype: float64"
+      ]
+     },
+     "execution_count": 19,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "users_per_album = (\n",
+    "    user_album_interactions\n",
+    "    .groupby(\"album_key\")[\"user_id\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "users_per_album.describe(\n",
+    "    percentiles=[0.5, 0.9, 0.95, 0.99]\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "f1d6ddd5",
+   "metadata": {},
+   "source": [
+    "### Album overlap across users\n",
+    "\n",
+    "Most albums are associated with very few users: the median album appears for only one user, while 90% of albums appear for no more than two users.\n",
+    "\n",
+    "However, the upper tail contains albums with substantially more cross-user interaction, with the top 1% appearing for at least 11 users. This confirms that the catalogue is highly sparse, but still contains a sizeable subset of shared albums that can support collaborative filtering."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "865fc042",
+   "metadata": {},
+   "source": [
+    "## 5. Choose filtering thresholds"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "88f6c9bc",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Users with >= 5 albums: 13,715 (70.9%)\n",
+      "Users with >= 10 albums: 10,403 (53.8%)\n",
+      "Users with >= 20 albums: 6,536 (33.8%)\n"
+     ]
+    }
+   ],
+   "source": [
+    "user_thresholds = [5, 10, 20]\n",
+    "\n",
+    "for threshold in user_thresholds:\n",
+    "    n_users = (albums_per_user >= threshold).sum()\n",
+    "    percentage = n_users / len(albums_per_user) * 100\n",
+    "\n",
+    "    print(\n",
+    "        f\"Users with >= {threshold} albums: \"\n",
+    "        f\"{n_users:,} ({percentage:.1f}%)\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "60ead6ca",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Albums with >= 2 users: 77,496 (17.1%)\n",
+      "Albums with >= 5 users: 15,472 (3.4%)\n",
+      "Albums with >= 10 users: 5,264 (1.2%)\n"
+     ]
+    }
+   ],
+   "source": [
+    "album_thresholds = [2, 5, 10]\n",
+    "\n",
+    "for threshold in album_thresholds:\n",
+    "    n_albums = (users_per_album >= threshold).sum()\n",
+    "    percentage = n_albums / len(users_per_album) * 100\n",
+    "\n",
+    "    print(\n",
+    "        f\"Albums with >= {threshold} users: \"\n",
+    "        f\"{n_albums:,} ({percentage:.1f}%)\"\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "315c355b",
+   "metadata": {},
+   "source": [
+    "### Choosing lower filtering thresholds\n",
+    "\n",
+    "A large proportion of users have enough history to support personalised recommendations: around 71% have interacted with at least 5 albums, while 54% have interacted with at least 10.\n",
+    "\n",
+    "The album side is much sparser. Only 17.1% of albums are shared by at least two users, falling to 3.4% for at least five users and 1.2% for at least ten.\n",
+    "\n",
+    "To retain as much useful data as possible while still requiring some cross-user overlap, I will use an initial lower threshold of **5 albums per user** and **2 users per album**."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "83879843",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "MIN_ALBUMS_PER_USER = 5\n",
+    "MIN_USERS_PER_ALBUM = 2\n",
+    "MAX_ALBUMS_PER_USER = 2000"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "b845098e",
+   "metadata": {},
+   "source": [
+    "Max albums per user is 2000 in order to remove extreme tail without throwing away meaningful data.\n",
+    "\n",
+    "Total listen count will not be used yet as an upper filter since evidence for extreme album breadth is stronger."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "a4089d8f",
+   "metadata": {},
+   "source": [
+    "## 6. Filter and validate interactions\n",
+    "\n",
+    "Filtering users changes the number of users associated with each album, while filtering albums changes the number of albums associated with each user.\n",
+    "\n",
+    "The two thresholds are therefore applied repeatedly until no further interactions are removed. I then validate the resulting dataset to confirm that all remaining users and albums satisfy the chosen requirements."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "id": "5a6ece54",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "eligible_users = albums_per_user[\n",
+    "    (albums_per_user >= MIN_ALBUMS_PER_USER)\n",
+    "    & (albums_per_user <= MAX_ALBUMS_PER_USER)\n",
+    "].index\n",
+    "\n",
+    "eligible_albums = users_per_album[\n",
+    "    users_per_album >= MIN_USERS_PER_ALBUM\n",
+    "].index\n",
+    "\n",
+    "filtered_interactions = user_album_interactions[\n",
+    "    user_album_interactions[\"user_id\"].isin(eligible_users)\n",
+    "    & user_album_interactions[\"album_key\"].isin(eligible_albums)\n",
+    "].copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "73edd536",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Users: 13,184\n",
+      "Albums: 65,783\n",
+      "Interactions: 236,018\n",
+      "Total listens represented: 798,947\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(f\"Users: {filtered_interactions['user_id'].nunique():,}\")\n",
+    "print(f\"Albums: {filtered_interactions['album_key'].nunique():,}\")\n",
+    "print(f\"Interactions: {len(filtered_interactions):,}\")\n",
+    "print(f\"Total listens represented: {filtered_interactions['listen_count'].sum():,}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "3c5393d9",
+   "metadata": {},
+   "source": [
+    "### Apply initial filtering rules\n",
+    "\n",
+    "After filtering, the dataset still contains over 13,000 users, 65,000 albums and 236,000 user-album interactions. This leaves a sizeable interaction dataset while removing users with very limited history, albums with no cross-user overlap, and a very small number of extreme accounts."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "id": "c0a47b61",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "count    13184.000000\n",
+      "mean        17.901851\n",
+      "std         25.597378\n",
+      "min          1.000000\n",
+      "25%          5.000000\n",
+      "50%         10.000000\n",
+      "75%         22.000000\n",
+      "max        828.000000\n",
+      "Name: album_key, dtype: float64\n",
+      "count    65783.000000\n",
+      "mean         3.587827\n",
+      "std          9.598446\n",
+      "min          1.000000\n",
+      "25%          1.000000\n",
+      "50%          2.000000\n",
+      "75%          3.000000\n",
+      "max        693.000000\n",
+      "Name: user_id, dtype: float64\n"
+     ]
+    }
+   ],
+   "source": [
+    "filtered_albums_per_user = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"user_id\")[\"album_key\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "filtered_users_per_album = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"album_key\")[\"user_id\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "print(filtered_albums_per_user.describe())\n",
+    "print(filtered_users_per_album.describe())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "532fa19b",
+   "metadata": {},
+   "source": [
+    "### Validate filtering consistency\n",
+    "\n",
+    "After the initial one-pass filter, some users fall below the minimum of 5 albums and some albums fall below the minimum of 2 users. This happens because removing sparse albums can reduce a user's remaining history, while removing users can also reduce the number of listeners associated with an album.\n",
+    "\n",
+    "To ensure that all remaining users and albums satisfy the chosen thresholds, the filtering process is therefore repeated iteratively until the dataset stabilises."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "id": "795bf0c8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "filtered_interactions = user_album_interactions.copy()\n",
+    "\n",
+    "previous_shape = None\n",
+    "\n",
+    "while previous_shape != filtered_interactions.shape:\n",
+    "    previous_shape = filtered_interactions.shape\n",
+    "\n",
+    "    albums_per_user_current = (\n",
+    "        filtered_interactions\n",
+    "        .groupby(\"user_id\")[\"album_key\"]\n",
+    "        .nunique()\n",
+    "    )\n",
+    "\n",
+    "    users_per_album_current = (\n",
+    "        filtered_interactions\n",
+    "        .groupby(\"album_key\")[\"user_id\"]\n",
+    "        .nunique()\n",
+    "    )\n",
+    "\n",
+    "    eligible_users = albums_per_user_current[\n",
+    "        (albums_per_user_current >= MIN_ALBUMS_PER_USER)\n",
+    "        & (albums_per_user_current <= MAX_ALBUMS_PER_USER)\n",
+    "    ].index\n",
+    "\n",
+    "    eligible_albums = users_per_album_current[\n",
+    "        users_per_album_current >= MIN_USERS_PER_ALBUM\n",
+    "    ].index\n",
+    "\n",
+    "    filtered_interactions = filtered_interactions[\n",
+    "        filtered_interactions[\"user_id\"].isin(eligible_users)\n",
+    "        & filtered_interactions[\"album_key\"].isin(eligible_albums)\n",
+    "    ].copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "id": "40923a64",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Users: 9858\n",
+      "Albums: 42567\n",
+      "Interactions: 204213\n",
+      "Minimum albums per user: 5\n",
+      "Minimum users per album: 2\n"
+     ]
+    }
+   ],
+   "source": [
+    "final_albums_per_user = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"user_id\")[\"album_key\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "final_users_per_album = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"album_key\")[\"user_id\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "print(\"Users:\", filtered_interactions[\"user_id\"].nunique())\n",
+    "print(\"Albums:\", filtered_interactions[\"album_key\"].nunique())\n",
+    "print(\"Interactions:\", len(filtered_interactions))\n",
+    "\n",
+    "print(\"Minimum albums per user:\", final_albums_per_user.min())\n",
+    "print(\"Minimum users per album:\", final_users_per_album.min())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "e9aca408",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "All validation checks passed.\n"
+     ]
+    }
+   ],
+   "source": [
+    "assert final_albums_per_user.min() >= MIN_ALBUMS_PER_USER\n",
+    "assert final_albums_per_user.max() <= MAX_ALBUMS_PER_USER\n",
+    "assert final_users_per_album.min() >= MIN_USERS_PER_ALBUM\n",
+    "assert (filtered_interactions[\"listen_count\"] > 0).all()\n",
+    "assert not filtered_interactions.duplicated(\n",
+    "    subset=[\"user_id\", \"album_key\"]\n",
+    ").any()\n",
+    "\n",
+    "print(\"All validation checks passed.\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "id": "346e68c5",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "count    9858.00000\n",
+      "mean       20.71546\n",
+      "std        24.70889\n",
+      "min         5.00000\n",
+      "25%         8.00000\n",
+      "50%        13.00000\n",
+      "75%        25.00000\n",
+      "max       735.00000\n",
+      "Name: album_key, dtype: float64\n",
+      "count    42567.000000\n",
+      "mean         4.797449\n",
+      "std         11.568073\n",
+      "min          2.000000\n",
+      "25%          2.000000\n",
+      "50%          2.000000\n",
+      "75%          4.000000\n",
+      "max        691.000000\n",
+      "Name: user_id, dtype: float64\n"
+     ]
+    }
+   ],
+   "source": [
+    "final_albums_per_user = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"user_id\")[\"album_key\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "final_users_per_album = (\n",
+    "    filtered_interactions\n",
+    "    .groupby(\"album_key\")[\"user_id\"]\n",
+    "    .nunique()\n",
+    ")\n",
+    "\n",
+    "print(final_albums_per_user.describe())\n",
+    "print(final_users_per_album.describe())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "id": "9fc00816",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Interactions retained: 28.5%\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\n",
+    "    f\"Interactions retained: \"\n",
+    "    f\"{len(filtered_interactions) / len(user_album_interactions):.1%}\"\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "80dcfebe",
+   "metadata": {},
+   "source": [
+    "### Final filtered interaction dataset\n",
+    "\n",
+    "Repeating the user and album filters until the dataset stabilises ensures that every remaining user has at least 5 album interactions and every remaining album is shared by at least 2 users.\n",
+    "\n",
+    "The final dataset contains 9,858 users, 42,567 albums and 204,213 user-album interactions. This provides a cleaner interaction matrix for collaborative filtering while retaining a substantial amount of data for modelling."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c40c0217",
+   "metadata": {},
+   "source": [
+    "## 7. Save processed data\n",
+    "\n",
+    "The final filtered interaction dataset is saved locally for use in the modelling and SQL stages of the project.\n",
+    "\n",
+    "Parquet is used instead of CSV because it is more storage-efficient and preserves data types. The processed file is not uploaded to GitHub due to its size, but it can be reproduced from the raw ListenBrainz data using this notebook."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "id": "a41c5d02",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Saved processed interactions to: ..\\..\\data\\processed\\user_album_interactions.parquet\n"
+     ]
+    }
+   ],
+   "source": [
+    "processed_path = ( Path(\"..\") / \"..\" / \"data\" / \"processed\" / \"user_album_interactions.parquet\" )\n",
+    "\n",
+    "processed_path.parent.mkdir(\n",
+    "    parents=True,\n",
+    "    exist_ok=True\n",
+    ")\n",
+    "\n",
+    "filtered_interactions.to_parquet(\n",
+    "    processed_path,\n",
+    "    index=False\n",
+    ")\n",
+    "\n",
+    "print(f\"Saved processed interactions to: {processed_path}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "id": "61997577",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Rows saved: 204,213\n",
+      "Users saved: 9,858\n",
+      "Albums saved: 42,567\n"
+     ]
+    }
+   ],
+   "source": [
+    "saved_interactions = pd.read_parquet(processed_path)\n",
+    "\n",
+    "print(f\"Rows saved: {len(saved_interactions):,}\")\n",
+    "print(f\"Users saved: {saved_interactions['user_id'].nunique():,}\")\n",
+    "print(f\"Albums saved: {saved_interactions['album_key'].nunique():,}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "337b246b",
+   "metadata": {},
+   "source": [
+    "The final interaction dataset contains 9,858 users, 42,567 albums and 204,213 user-album interactions after iterative filtering. All remaining users have at least 5 album interactions and all remaining albums are shared by at least 2 users. This processed dataset is saved locally in Parquet format and will be used for SQL analysis and recommendation modelling."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "base",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
