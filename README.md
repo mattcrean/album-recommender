@@ -35,7 +35,8 @@ This is currently a provisional album identifier.
 ## Current progress
 - [x] Inspect raw ListenBrainz data
 - [x] Assess collaborative-filtering viability
-- [ ] Build modelling dataset
+- [x] Build modelling dataset
+- [ ] Build SQL analytics database
 
 ## Repository structure
 
