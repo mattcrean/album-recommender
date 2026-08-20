@@ -48,6 +48,7 @@ album-recommender/
 │
 ├── notebooks/
 │   └── 01_inspect_data.ipynb
+│   └── 02_build_dataset.ipynb
 │
 └── data/
     └── README.md
