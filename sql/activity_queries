@@ -1,0 +1,63 @@
+-- Most active users by total listens
+SELECT
+    user_id,
+    SUM(listen_count) AS total_listens,
+    COUNT(DISTINCT album_id) AS distinct_albums
+FROM interactions
+GROUP BY user_id
+ORDER BY total_listens DESC
+LIMIT 20;
+
+-- Most listened-to albums
+SELECT
+    ar.artist_name,
+    al.release_name,
+    SUM(i.listen_count) AS total_listens,
+    COUNT(DISTINCT i.user_id) AS unique_listeners
+FROM interactions AS i
+JOIN albums AS al
+    ON i.album_id = al.album_id
+JOIN artists AS ar
+    ON al.artist_id = ar.artist_id
+GROUP BY
+    al.album_id,
+    ar.artist_name,
+    al.release_name
+ORDER BY total_listens DESC
+LIMIT 20;
+
+-- Most listened-to artists
+SELECT
+    ar.artist_name,
+    SUM(i.listen_count) AS total_listens,
+    COUNT(DISTINCT i.user_id) AS unique_listeners,
+    COUNT(DISTINCT al.album_id) AS distinct_albums
+FROM interactions AS i
+JOIN albums AS al
+    ON i.album_id = al.album_id
+JOIN artists AS ar
+    ON al.artist_id = ar.artist_id
+GROUP BY
+    ar.artist_id,
+    ar.artist_name
+ORDER BY total_listens DESC
+LIMIT 20;
+
+-- Albums with broad user overlap
+SELECT
+    ar.artist_name,
+    al.release_name,
+    COUNT(DISTINCT i.user_id) AS unique_listeners,
+    SUM(i.listen_count) AS total_listens
+FROM interactions AS i
+JOIN albums AS al
+    ON i.album_id = al.album_id
+JOIN artists AS ar
+    ON al.artist_id = ar.artist_id
+GROUP BY
+    al.album_id,
+    ar.artist_name,
+    al.release_name
+HAVING COUNT(DISTINCT i.user_id) >= 5
+ORDER BY unique_listeners DESC
+LIMIT 20;
